@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Package, Edit, Trash2, Plus, Search } from "lucide-react"
+import { Package, Edit, Trash2, Plus, Search, Upload, Download, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 
 interface Product {
   id: string
@@ -49,6 +50,10 @@ export default function InventoryManagement({ products, setProducts }: Inventory
     image: "",
   })
 
+  const [showBulkImport, setShowBulkImport] = useState(false)
+  const [bulkData, setBulkData] = useState("")
+  const [bulkPreview, setBulkPreview] = useState<any[]>([])
+
   const filteredProducts = products.filter(
     (product) =>
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -58,7 +63,7 @@ export default function InventoryManagement({ products, setProducts }: Inventory
   )
 
   const addNewProduct = () => {
-    if (!newProduct.name || !newProduct.barcode || !newProduct.price || !newProduct.color || !newProduct.stock) {
+    if (!newProduct.name || !newProduct.price || !newProduct.color || !newProduct.stock) {
       alert("Please fill in all required fields")
       return
     }
@@ -66,7 +71,7 @@ export default function InventoryManagement({ products, setProducts }: Inventory
     const product: Product = {
       id: Date.now().toString(),
       name: newProduct.name,
-      barcode: newProduct.barcode,
+      barcode: newProduct.barcode || generateBarcode(), // Auto-generate if empty
       price: Number.parseFloat(newProduct.price),
       category: newProduct.category,
       size: newProduct.size,
@@ -114,6 +119,95 @@ export default function InventoryManagement({ products, setProducts }: Inventory
     setProducts(updatedProducts)
   }
 
+  const generateBarcode = () => {
+    // Generate a 13-digit barcode (EAN-13 format)
+    const timestamp = Date.now().toString()
+    const random = Math.floor(Math.random() * 1000)
+      .toString()
+      .padStart(3, "0")
+    return (timestamp + random).slice(-13).padStart(13, "0")
+  }
+
+  const parseBulkData = (data: string) => {
+    const lines = data.trim().split("\n")
+    const products = []
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim()
+      if (!line) continue
+
+      // Support both comma and tab separated values
+      const parts = line.split(/[,\t]/).map((part) => part.trim().replace(/"/g, ""))
+
+      if (parts.length >= 4) {
+        products.push({
+          name: parts[0] || "",
+          price: parts[1] || "",
+          category: parts[2] || "Shirts",
+          size: parts[3] || "M",
+          color: parts[4] || "",
+          stock: parts[5] || "10",
+          image: parts[6] || "",
+          barcode: generateBarcode(), // Auto-generate barcode
+        })
+      }
+    }
+
+    return products
+  }
+
+  const previewBulkData = () => {
+    if (!bulkData.trim()) {
+      setBulkPreview([])
+      return
+    }
+
+    const parsed = parseBulkData(bulkData)
+    setBulkPreview(parsed)
+  }
+
+  const importBulkData = () => {
+    if (bulkPreview.length === 0) {
+      alert("No valid data to import")
+      return
+    }
+
+    const newProducts = bulkPreview.map((item) => ({
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      name: item.name,
+      barcode: item.barcode,
+      price: Number.parseFloat(item.price) || 0,
+      category: item.category,
+      size: item.size,
+      color: item.color,
+      stock: Number.parseInt(item.stock) || 0,
+      image: item.image || "/placeholder.svg?height=200&width=200",
+    }))
+
+    setProducts([...products, ...newProducts])
+    setBulkData("")
+    setBulkPreview([])
+    setShowBulkImport(false)
+    alert(`Successfully imported ${newProducts.length} products!`)
+  }
+
+  const downloadTemplate = () => {
+    const template = `Product Name,Price,Category,Size,Color,Stock,Image URL
+Cotton T-Shirt,25.99,Shirts,M,Blue,15,
+Polo Shirt,35.99,Shirts,L,White,8,
+Dress Shirt,45.99,Shirts,M,Black,12,
+Casual Shirt,29.99,Shirts,S,Red,20,
+Flannel Shirt,39.99,Shirts,L,Plaid,6,`
+
+    const blob = new Blob([template], { type: "text/csv" })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "product_template.csv"
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }
+
   return (
     <Card className="border-pink-200 shadow-lg">
       <CardHeader className="bg-pink-100">
@@ -158,13 +252,23 @@ export default function InventoryManagement({ products, setProducts }: Inventory
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium mb-1 block">Barcode *</label>
-                  <Input
-                    placeholder="e.g., 1234567890123"
-                    value={newProduct.barcode}
-                    onChange={(e) => setNewProduct({ ...newProduct, barcode: e.target.value })}
-                    className="border-pink-300 focus:border-pink-500"
-                  />
+                  <label className="text-sm font-medium mb-1 block">Barcode</label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Auto-generated if empty"
+                      value={newProduct.barcode}
+                      onChange={(e) => setNewProduct({ ...newProduct, barcode: e.target.value })}
+                      className="border-pink-300 focus:border-pink-500"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setNewProduct({ ...newProduct, barcode: generateBarcode() })}
+                      className="border-pink-300"
+                    >
+                      Generate
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -259,6 +363,98 @@ export default function InventoryManagement({ products, setProducts }: Inventory
                     variant="outline"
                     className="flex-1 border-pink-300 bg-transparent"
                     onClick={() => setShowAddProduct(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={showBulkImport} onOpenChange={setShowBulkImport}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="border-pink-300 bg-transparent">
+                <Upload className="h-4 w-4 mr-2" />
+                Bulk Import
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Bulk Import Products</DialogTitle>
+                <DialogDescription>
+                  Import multiple products at once. Barcodes will be auto-generated.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={downloadTemplate} className="border-pink-300 bg-transparent">
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Template
+                  </Button>
+                  <Button variant="outline" onClick={previewBulkData} className="border-pink-300 bg-transparent">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Preview Data
+                  </Button>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium mb-2 block">
+                    Paste CSV Data (Name, Price, Category, Size, Color, Stock, Image URL)
+                  </label>
+                  <Textarea
+                    placeholder={`Cotton T-Shirt, 25.99, Shirts, M, Blue, 15, 
+Polo Shirt, 35.99, Shirts, L, White, 8,
+Dress Shirt, 45.99, Shirts, M, Black, 12`}
+                    value={bulkData}
+                    onChange={(e) => setBulkData(e.target.value)}
+                    className="min-h-32 border-pink-300 focus:border-pink-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Format: Name, Price, Category, Size, Color, Stock, Image URL (one product per line)
+                  </p>
+                </div>
+
+                {bulkPreview.length > 0 && (
+                  <div>
+                    <h4 className="font-medium mb-2">Preview ({bulkPreview.length} products)</h4>
+                    <div className="max-h-64 overflow-y-auto border border-pink-200 rounded-lg">
+                      <div className="grid grid-cols-7 gap-2 p-2 bg-pink-50 text-xs font-medium">
+                        <div>Name</div>
+                        <div>Price</div>
+                        <div>Category</div>
+                        <div>Size</div>
+                        <div>Color</div>
+                        <div>Stock</div>
+                        <div>Barcode</div>
+                      </div>
+                      {bulkPreview.map((item, index) => (
+                        <div key={index} className="grid grid-cols-7 gap-2 p-2 text-xs border-t border-pink-100">
+                          <div className="truncate">{item.name}</div>
+                          <div>${item.price}</div>
+                          <div>{item.category}</div>
+                          <div>{item.size}</div>
+                          <div>{item.color}</div>
+                          <div>{item.stock}</div>
+                          <div className="font-mono text-xs">{item.barcode}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1 bg-pink-500 hover:bg-pink-600 text-white"
+                    onClick={importBulkData}
+                    disabled={bulkPreview.length === 0}
+                  >
+                    Import {bulkPreview.length} Products
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1 border-pink-300 bg-transparent"
+                    onClick={() => setShowBulkImport(false)}
                   >
                     Cancel
                   </Button>

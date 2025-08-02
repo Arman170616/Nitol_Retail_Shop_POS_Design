@@ -254,7 +254,7 @@ export default function POSSystem() {
         <div className="bg-pink-200 rounded-lg p-4 mb-6 shadow-lg">
           <h1 className="text-3xl font-bold text-pink-900 flex items-center gap-2">
             <Package className="h-8 w-8" />
-            Nitol Fashion House 
+            Nitol Fashion House
           </h1>
           <p className="text-pink-700 mt-1">Professional Point of Sale Solution</p>
         </div>
