@@ -1,7 +1,9 @@
 "use client"
 
-import { useState } from "react"
-import { Package, Edit, Trash2, Plus, Search, Upload, Download, FileText } from "lucide-react"
+import type React from "react"
+
+import { useState, useRef } from "react"
+import { Package, Edit, Trash2, Plus, Search, Upload, Download, FileText, File } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -53,6 +55,9 @@ export default function InventoryManagement({ products, setProducts }: Inventory
   const [showBulkImport, setShowBulkImport] = useState(false)
   const [bulkData, setBulkData] = useState("")
   const [bulkPreview, setBulkPreview] = useState<any[]>([])
+  const [uploadedFileName, setUploadedFileName] = useState("")
+  const [isProcessingFile, setIsProcessingFile] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const filteredProducts = products.filter(
     (product) =>
@@ -71,7 +76,7 @@ export default function InventoryManagement({ products, setProducts }: Inventory
     const product: Product = {
       id: Date.now().toString(),
       name: newProduct.name,
-      barcode: newProduct.barcode || generateBarcode(), // Auto-generate if empty
+      barcode: newProduct.barcode || generateBarcode(),
       price: Number.parseFloat(newProduct.price),
       category: newProduct.category,
       size: newProduct.size,
@@ -120,7 +125,6 @@ export default function InventoryManagement({ products, setProducts }: Inventory
   }
 
   const generateBarcode = () => {
-    // Generate a 13-digit barcode (EAN-13 format)
     const timestamp = Date.now().toString()
     const random = Math.floor(Math.random() * 1000)
       .toString()
@@ -136,7 +140,11 @@ export default function InventoryManagement({ products, setProducts }: Inventory
       const line = lines[i].trim()
       if (!line) continue
 
-      // Support both comma and tab separated values
+      // Skip header row if it contains common header terms
+      if (i === 0 && line.toLowerCase().includes("name") && line.toLowerCase().includes("price")) {
+        continue
+      }
+
       const parts = line.split(/[,\t]/).map((part) => part.trim().replace(/"/g, ""))
 
       if (parts.length >= 4) {
@@ -148,12 +156,130 @@ export default function InventoryManagement({ products, setProducts }: Inventory
           color: parts[4] || "",
           stock: parts[5] || "10",
           image: parts[6] || "",
-          barcode: generateBarcode(), // Auto-generate barcode
+          barcode: generateBarcode(),
         })
       }
     }
 
     return products
+  }
+
+  const parseCSV = (csvText: string) => {
+    const lines = csvText.split("\n")
+    const result = []
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim()
+      if (!line) continue
+
+      // Skip header row
+      if (i === 0 && line.toLowerCase().includes("name") && line.toLowerCase().includes("price")) {
+        continue
+      }
+
+      // Parse CSV line (handles quoted values)
+      const values = []
+      let current = ""
+      let inQuotes = false
+
+      for (let j = 0; j < line.length; j++) {
+        const char = line[j]
+        if (char === '"') {
+          inQuotes = !inQuotes
+        } else if (char === "," && !inQuotes) {
+          values.push(current.trim())
+          current = ""
+        } else {
+          current += char
+        }
+      }
+      values.push(current.trim())
+
+      if (values.length >= 4) {
+        result.push({
+          name: values[0] || "",
+          price: values[1] || "",
+          category: values[2] || "Shirts",
+          size: values[3] || "M",
+          color: values[4] || "",
+          stock: values[5] || "10",
+          image: values[6] || "",
+          barcode: generateBarcode(),
+        })
+      }
+    }
+
+    return result
+  }
+
+  const parseExcel = async (file: File) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer)
+
+          // Simple Excel parsing - convert to CSV-like format
+          // This is a basic implementation. For production, you'd want to use a library like xlsx
+          const text = new TextDecoder().decode(data)
+
+          // For now, we'll treat it as CSV since proper Excel parsing requires additional libraries
+          // In a real implementation, you'd use: import * as XLSX from 'xlsx'
+          alert("Excel files are currently parsed as CSV. Please save your Excel file as CSV format for best results.")
+
+          const csvData = text.replace(/\t/g, ",") // Convert tabs to commas
+          const parsed = parseCSV(csvData)
+          resolve(parsed)
+        } catch (error) {
+          reject(error)
+        }
+      }
+      reader.onerror = reject
+      reader.readAsArrayBuffer(file)
+    })
+  }
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setIsProcessingFile(true)
+    setUploadedFileName(file.name)
+
+    try {
+      const reader = new FileReader()
+      reader.onload = async (e) => {
+        const content = e.target?.result as string
+
+        let parsed = []
+
+        if (file.name.toLowerCase().endsWith(".csv")) {
+          parsed = parseCSV(content)
+        } else if (file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls")) {
+          // For Excel files, we'll provide instructions to convert to CSV
+          alert("For best results with Excel files, please save as CSV format. Attempting to parse as CSV...")
+          parsed = parseCSV(content)
+        } else {
+          alert("Please upload a CSV or Excel file")
+          setIsProcessingFile(false)
+          return
+        }
+
+        setBulkPreview(parsed)
+        setBulkData(content)
+        setIsProcessingFile(false)
+      }
+
+      reader.onerror = () => {
+        alert("Error reading file")
+        setIsProcessingFile(false)
+      }
+
+      reader.readAsText(file)
+    } catch (error) {
+      alert("Error processing file: " + error)
+      setIsProcessingFile(false)
+    }
   }
 
   const previewBulkData = () => {
@@ -187,7 +313,11 @@ export default function InventoryManagement({ products, setProducts }: Inventory
     setProducts([...products, ...newProducts])
     setBulkData("")
     setBulkPreview([])
+    setUploadedFileName("")
     setShowBulkImport(false)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
     alert(`Successfully imported ${newProducts.length} products!`)
   }
 
@@ -206,6 +336,15 @@ Flannel Shirt,39.99,Shirts,L,Plaid,6,`
     a.download = "product_template.csv"
     a.click()
     window.URL.revokeObjectURL(url)
+  }
+
+  const clearBulkData = () => {
+    setBulkData("")
+    setBulkPreview([])
+    setUploadedFileName("")
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
   }
 
   return (
@@ -382,12 +521,12 @@ Flannel Shirt,39.99,Shirts,L,Plaid,6,`
               <DialogHeader>
                 <DialogTitle>Bulk Import Products</DialogTitle>
                 <DialogDescription>
-                  Import multiple products at once. Barcodes will be auto-generated.
+                  Upload CSV/Excel files or paste data. Barcodes will be auto-generated.
                 </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-4">
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Button variant="outline" onClick={downloadTemplate} className="border-pink-300 bg-transparent">
                     <Download className="h-4 w-4 mr-2" />
                     Download Template
@@ -396,8 +535,41 @@ Flannel Shirt,39.99,Shirts,L,Plaid,6,`
                     <FileText className="h-4 w-4 mr-2" />
                     Preview Data
                   </Button>
+                  <Button variant="outline" onClick={clearBulkData} className="border-pink-300 bg-transparent">
+                    Clear All
+                  </Button>
                 </div>
 
+                {/* File Upload Section */}
+                <div className="border-2 border-dashed border-pink-300 rounded-lg p-6 bg-pink-50">
+                  <div className="text-center">
+                    <File className="h-12 w-12 text-pink-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-pink-900 mb-2">Upload CSV or Excel File</h3>
+                    <p className="text-sm text-pink-600 mb-4">Drag and drop your file here, or click to browse</p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isProcessingFile}
+                      className="border-pink-300 bg-white"
+                    >
+                      {isProcessingFile ? "Processing..." : "Choose File"}
+                    </Button>
+                    {uploadedFileName && <p className="text-sm text-pink-700 mt-2">Uploaded: {uploadedFileName}</p>}
+                  </div>
+                </div>
+
+                <div className="text-center text-sm text-gray-500">
+                  <span>OR</span>
+                </div>
+
+                {/* Manual Data Entry */}
                 <div>
                   <label className="text-sm font-medium mb-2 block">
                     Paste CSV Data (Name, Price, Category, Size, Color, Stock, Image URL)
