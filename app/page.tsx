@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { ShoppingCart, Scan, CreditCard, Printer, Package, History, Search, Minus, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import InventoryManagement from "@/components/inventory-management"
+import LoginForm from "@/components/login-form"
+import UserProfile from "@/components/user-profile"
 
 interface Product {
   id: string
@@ -42,6 +44,13 @@ interface Transaction {
   total: number
   paymentMethod: string
   timestamp: Date
+  cashier: string
+}
+
+interface User {
+  username: string
+  role: string
+  fullName: string
 }
 
 const initialProducts: Product[] = [
@@ -103,6 +112,7 @@ const initialProducts: Product[] = [
 ]
 
 export default function POSSystem() {
+  const [user, setUser] = useState<User | null>(null)
   const [products, setProducts] = useState<Product[]>(initialProducts)
   const [cart, setCart] = useState<CartItem[]>([])
   const [searchTerm, setSearchTerm] = useState("")
@@ -126,6 +136,38 @@ export default function POSSystem() {
 
   const VAT_RATE = 0.05
   const [activeTab, setActiveTab] = useState("pos")
+
+  // Check for existing session on component mount
+  useEffect(() => {
+    const savedUser = localStorage.getItem("pos_user")
+    if (savedUser) {
+      setUser(JSON.parse(savedUser))
+    }
+  }, [])
+
+  const handleLogin = (userData: User) => {
+    setUser(userData)
+    localStorage.setItem("pos_user", JSON.stringify(userData))
+  }
+
+  const handleLogout = () => {
+    setUser(null)
+    localStorage.removeItem("pos_user")
+    setCart([])
+    setActiveTab("pos")
+  }
+
+  const hasPermission = (permission: string) => {
+    if (!user) return false
+
+    const permissions: Record<string, string[]> = {
+      "Super Admin": ["pos", "inventory", "reports", "users", "settings"],
+      Manager: ["pos", "inventory", "reports"],
+      Cashier: ["pos", "basic_inventory"],
+    }
+
+    return permissions[user.role]?.includes(permission) || false
+  }
 
   const filteredProducts = products.filter(
     (product) =>
@@ -223,6 +265,7 @@ export default function POSSystem() {
       total: calculateTotal(),
       paymentMethod,
       timestamp: new Date(),
+      cashier: user?.fullName || "Unknown",
     }
 
     // Update inventory
@@ -247,39 +290,135 @@ export default function POSSystem() {
     window.print()
   }
 
+  // Show login form if user is not authenticated
+  if (!user) {
+    return <LoginForm onLogin={handleLogin} />
+  }
+
   return (
     <div className="min-h-screen bg-pink-50">
       <div className="container mx-auto p-4">
-        {/* Header */}
-        <div className="bg-pink-200 rounded-lg p-4 mb-6 shadow-lg">
-          <h1 className="text-3xl font-bold text-pink-900 flex items-center gap-2">
-            <Package className="h-8 w-8" />
-            Nitol Fashion House
-          </h1>
-          <p className="text-pink-700 mt-1">Professional Point of Sale Solution</p>
+        {/* Enhanced Welcome Header */}
+        <div className="bg-gradient-to-r from-pink-200 to-pink-300 rounded-lg p-6 mb-6 shadow-lg">
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-pink-900 flex items-center gap-2 mb-2">
+                <Package className="h-8 w-8" />
+                Welcome, {user.fullName}
+              </h1>
+              <p className="text-pink-700 text-lg font-medium">
+                {new Date().toLocaleDateString("en-US", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+              <p className="text-pink-600 mt-1">Nitol Fashion House - Professional Point of Sale Solution</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <div className="bg-pink-100 rounded-lg p-3 border border-pink-300">
+                  <p className="text-sm text-pink-700 font-medium">Total Products</p>
+                  <p className="text-2xl font-bold text-pink-900">{products.length}</p>
+                </div>
+              </div>
+              <UserProfile user={user} onLogout={handleLogout} />
+            </div>
+          </div>
         </div>
 
-        <div className="flex gap-2 mb-6">
-          <Button
-            variant={activeTab === "pos" ? "default" : "outline"}
-            onClick={() => setActiveTab("pos")}
-            className={activeTab === "pos" ? "bg-pink-500 hover:bg-pink-600 text-white" : "border-pink-300"}
-          >
-            <ShoppingCart className="h-4 w-4 mr-2" />
-            Point of Sale
-          </Button>
-          <Button
-            variant={activeTab === "inventory" ? "default" : "outline"}
-            onClick={() => setActiveTab("inventory")}
-            className={activeTab === "inventory" ? "bg-pink-500 hover:bg-pink-600 text-white" : "border-pink-300"}
-          >
-            <Package className="h-4 w-4 mr-2" />
-            Inventory Management
-          </Button>
+        {/* Category Overview */}
+        <div className="mb-6">
+          <Card className="border-pink-200 shadow-lg">
+            <CardHeader className="bg-pink-100">
+              <CardTitle className="text-pink-900">Product Categories</CardTitle>
+              <CardDescription>Overview of your inventory by category</CardDescription>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                {(() => {
+                  const categories = products.reduce(
+                    (acc, product) => {
+                      acc[product.category] = (acc[product.category] || 0) + 1
+                      return acc
+                    },
+                    {} as Record<string, number>,
+                  )
+
+                  return Object.entries(categories).map(([category, count]) => (
+                    <div
+                      key={category}
+                      className="bg-pink-50 rounded-lg p-3 text-center border border-pink-200 hover:bg-pink-100 transition-colors"
+                    >
+                      <p className="font-semibold text-pink-900 text-sm">{category}</p>
+                      <p className="text-pink-700 text-xs">{count} items</p>
+                      <div className="mt-2">
+                        <div className="w-full bg-pink-200 rounded-full h-2">
+                          <div
+                            className="bg-pink-500 h-2 rounded-full transition-all duration-300"
+                            style={{
+                              width: `${Math.min((count / Math.max(...Object.values(categories))) * 100, 100)}%`,
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                })()}
+              </div>
+              {products.length === 0 && (
+                <div className="text-center py-8 text-pink-600">
+                  <Package className="h-12 w-12 mx-auto mb-3 text-pink-400" />
+                  <p>No products in inventory yet</p>
+                  <p className="text-sm">Add products to see category overview</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex gap-2 mb-6 items-center justify-between">
+          <div className="flex gap-2">
+            <Button
+              variant={activeTab === "pos" ? "default" : "outline"}
+              onClick={() => setActiveTab("pos")}
+              className={activeTab === "pos" ? "bg-pink-500 hover:bg-pink-600 text-white" : "border-pink-300"}
+            >
+              <ShoppingCart className="h-4 w-4 mr-2" />
+              Point of Sale
+            </Button>
+            {hasPermission("inventory") && (
+              <Button
+                variant={activeTab === "inventory" ? "default" : "outline"}
+                onClick={() => setActiveTab("inventory")}
+                className={activeTab === "inventory" ? "bg-pink-500 hover:bg-pink-600 text-white" : "border-pink-300"}
+              >
+                <Package className="h-4 w-4 mr-2" />
+                Inventory Management
+              </Button>
+            )}
+          </div>
+
+          <div className="flex gap-4 text-sm">
+            <div className="text-center">
+              <p className="text-pink-700 font-medium">Low Stock</p>
+              <p className="text-pink-900 font-bold">{products.filter((p) => p.stock <= 5).length}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-pink-700 font-medium">Out of Stock</p>
+              <p className="text-pink-900 font-bold">{products.filter((p) => p.stock === 0).length}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-pink-700 font-medium">Total Value</p>
+              <p className="text-pink-900 font-bold">
+                ${products.reduce((sum, p) => sum + p.price * p.stock, 0).toFixed(0)}
+              </p>
+            </div>
+          </div>
         </div>
 
         {activeTab === "pos" ? (
-          // Wrap the existing grid content here
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Product Scanner & Search */}
             <div className="lg:col-span-2">
@@ -467,7 +606,8 @@ export default function POSSystem() {
                                       </span>
                                     </div>
                                     <p className="text-sm text-gray-600 mb-1">
-                                      {transaction.items.length} items • {transaction.paymentMethod}
+                                      {transaction.items.length} items • {transaction.paymentMethod} •{" "}
+                                      {transaction.cashier}
                                     </p>
                                     <p className="font-bold">${transaction.total.toFixed(2)}</p>
                                   </CardContent>
@@ -479,138 +619,143 @@ export default function POSSystem() {
                       </DialogContent>
                     </Dialog>
 
-                    <Dialog open={showAddProduct} onOpenChange={setShowAddProduct}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="border-pink-300 bg-transparent">
-                          <Plus className="h-4 w-4 mr-1" />
-                          Add Product
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-md">
-                        <DialogHeader>
-                          <DialogTitle>Add New Product</DialogTitle>
-                          <DialogDescription>Add a new item to your inventory</DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div>
-                            <label className="text-sm font-medium mb-1 block">Product Name *</label>
-                            <Input
-                              placeholder="e.g., Cotton T-Shirt"
-                              value={newProduct.name}
-                              onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                              className="border-pink-300 focus:border-pink-500"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-sm font-medium mb-1 block">Barcode *</label>
-                            <Input
-                              placeholder="e.g., 1234567890123"
-                              value={newProduct.barcode}
-                              onChange={(e) => setNewProduct({ ...newProduct, barcode: e.target.value })}
-                              className="border-pink-300 focus:border-pink-500"
-                            />
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
+                    {hasPermission("inventory") && (
+                      <Dialog open={showAddProduct} onOpenChange={setShowAddProduct}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="sm" className="border-pink-300 bg-transparent">
+                            <Plus className="h-4 w-4 mr-1" />
+                            Add Product
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Add New Product</DialogTitle>
+                            <DialogDescription>Add a new item to your inventory</DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4">
                             <div>
-                              <label className="text-sm font-medium mb-1 block">Price *</label>
+                              <label className="text-sm font-medium mb-1 block">Product Name *</label>
                               <Input
-                                type="number"
-                                step="0.01"
-                                placeholder="25.99"
-                                value={newProduct.price}
-                                onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
+                                placeholder="e.g., Cotton T-Shirt"
+                                value={newProduct.name}
+                                onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
                                 className="border-pink-300 focus:border-pink-500"
                               />
                             </div>
+
                             <div>
-                              <label className="text-sm font-medium mb-1 block">Stock *</label>
+                              <label className="text-sm font-medium mb-1 block">Barcode *</label>
                               <Input
-                                type="number"
-                                placeholder="15"
-                                value={newProduct.stock}
-                                onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
+                                placeholder="e.g., 1234567890123"
+                                value={newProduct.barcode}
+                                onChange={(e) => setNewProduct({ ...newProduct, barcode: e.target.value })}
                                 className="border-pink-300 focus:border-pink-500"
                               />
                             </div>
-                          </div>
 
-                          <div>
-                            <label className="text-sm font-medium mb-1 block">Category</label>
-                            <Select
-                              value={newProduct.category}
-                              onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}
-                            >
-                              <SelectTrigger className="border-pink-300">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="Shirts">Shirts</SelectItem>
-                                <SelectItem value="T-Shirts">T-Shirts</SelectItem>
-                                <SelectItem value="Polo">Polo</SelectItem>
-                                <SelectItem value="Dress Shirts">Dress Shirts</SelectItem>
-                                <SelectItem value="Casual">Casual</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-sm font-medium mb-1 block">Price *</label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="25.99"
+                                  value={newProduct.price}
+                                  onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
+                                  className="border-pink-300 focus:border-pink-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium mb-1 block">Stock *</label>
+                                <Input
+                                  type="number"
+                                  placeholder="15"
+                                  value={newProduct.stock}
+                                  onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
+                                  className="border-pink-300 focus:border-pink-500"
+                                />
+                              </div>
+                            </div>
 
-                          <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="text-sm font-medium mb-1 block">Size</label>
+                              <label className="text-sm font-medium mb-1 block">Category</label>
                               <Select
-                                value={newProduct.size}
-                                onValueChange={(value) => setNewProduct({ ...newProduct, size: value })}
+                                value={newProduct.category}
+                                onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}
                               >
                                 <SelectTrigger className="border-pink-300">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="XS">XS</SelectItem>
-                                  <SelectItem value="S">S</SelectItem>
-                                  <SelectItem value="M">M</SelectItem>
-                                  <SelectItem value="L">L</SelectItem>
-                                  <SelectItem value="XL">XL</SelectItem>
-                                  <SelectItem value="XXL">XXL</SelectItem>
+                                  <SelectItem value="Shirts">Shirts</SelectItem>
+                                  <SelectItem value="T-Shirts">T-Shirts</SelectItem>
+                                  <SelectItem value="Polo">Polo</SelectItem>
+                                  <SelectItem value="Dress Shirts">Dress Shirts</SelectItem>
+                                  <SelectItem value="Casual">Casual</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-sm font-medium mb-1 block">Size</label>
+                                <Select
+                                  value={newProduct.size}
+                                  onValueChange={(value) => setNewProduct({ ...newProduct, size: value })}
+                                >
+                                  <SelectTrigger className="border-pink-300">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="XS">XS</SelectItem>
+                                    <SelectItem value="S">S</SelectItem>
+                                    <SelectItem value="M">M</SelectItem>
+                                    <SelectItem value="L">L</SelectItem>
+                                    <SelectItem value="XL">XL</SelectItem>
+                                    <SelectItem value="XXL">XXL</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium mb-1 block">Color *</label>
+                                <Input
+                                  placeholder="e.g., Blue"
+                                  value={newProduct.color}
+                                  onChange={(e) => setNewProduct({ ...newProduct, color: e.target.value })}
+                                  className="border-pink-300 focus:border-pink-500"
+                                />
+                              </div>
+                            </div>
+
                             <div>
-                              <label className="text-sm font-medium mb-1 block">Color *</label>
+                              <label className="text-sm font-medium mb-1 block">Image URL (Optional)</label>
                               <Input
-                                placeholder="e.g., Blue"
-                                value={newProduct.color}
-                                onChange={(e) => setNewProduct({ ...newProduct, color: e.target.value })}
+                                placeholder="https://example.com/image.jpg"
+                                value={newProduct.image}
+                                onChange={(e) => setNewProduct({ ...newProduct, image: e.target.value })}
                                 className="border-pink-300 focus:border-pink-500"
                               />
                             </div>
-                          </div>
 
-                          <div>
-                            <label className="text-sm font-medium mb-1 block">Image URL (Optional)</label>
-                            <Input
-                              placeholder="https://example.com/image.jpg"
-                              value={newProduct.image}
-                              onChange={(e) => setNewProduct({ ...newProduct, image: e.target.value })}
-                              className="border-pink-300 focus:border-pink-500"
-                            />
+                            <div className="flex gap-2">
+                              <Button
+                                className="flex-1 bg-pink-500 hover:bg-pink-600 text-white"
+                                onClick={addNewProduct}
+                              >
+                                Add Product
+                              </Button>
+                              <Button
+                                variant="outline"
+                                className="flex-1 border-pink-300 bg-transparent"
+                                onClick={() => setShowAddProduct(false)}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
                           </div>
-
-                          <div className="flex gap-2">
-                            <Button className="flex-1 bg-pink-500 hover:bg-pink-600 text-white" onClick={addNewProduct}>
-                              Add Product
-                            </Button>
-                            <Button
-                              variant="outline"
-                              className="flex-1 border-pink-300 bg-transparent"
-                              onClick={() => setShowAddProduct(false)}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
+                        </DialogContent>
+                      </Dialog>
+                    )}
 
                     <Button variant="outline" size="sm" onClick={() => setCart([])} className="border-pink-300">
                       Clear Cart
@@ -620,8 +765,12 @@ export default function POSSystem() {
               </Card>
             </div>
           </div>
-        ) : (
+        ) : hasPermission("inventory") ? (
           <InventoryManagement products={products} setProducts={setProducts} />
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-pink-600">You don't have permission to access this section.</p>
+          </div>
         )}
 
         {/* Payment Dialog */}
@@ -695,6 +844,10 @@ export default function POSSystem() {
                   <div className="flex justify-between text-sm">
                     <span>Date:</span>
                     <span>{currentReceipt.timestamp.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>Cashier:</span>
+                    <span>{currentReceipt.cashier}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span>Payment:</span>
